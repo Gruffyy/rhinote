@@ -1,0 +1,181 @@
+#!/usr/bin/env python3
+# Filename : rhinote.py
+
+# Rhinote version 0.7.4  A simple "sticky notes" application; Linux version.
+
+# Copyright 2006, 2010 by Marv Boyes - greyspace@tuxfamily.org
+# http://rhinote.tuxfamily.org
+# Please see the file COPYING for license details.
+
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+
+# This program is distributed in hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St., Fifth Floor, Boston, MA  02110-1301 USA
+
+import tkinter
+import tkinter.filedialog as tkFileDialog
+import tkinter.messagebox as tkMessageBox
+import os
+import subprocess
+
+
+# the root window:
+def Rhinote():
+    r = tkinter.Tk(className='Rhinote')
+    r.option_add('*font', '{Helvetica} 11')
+    t = TextWidget(r, bg="#080c07", wrap='word', undo=True)
+    t.focus_set()
+    t.pack(fill='both', expand=1)
+    r.geometry('320x285')
+    r.title('Rhinote')
+    r.mainloop()
+
+
+# the text widget, and all of its functions:
+class TextWidget(tkinter.Text):
+
+    def save_file(self, whatever=None):
+        if (self.filename == ''):
+            self.save_file_as()
+            self.master.title('Rhinote %s' % self.filename)
+        else:
+            f = open(self.filename, 'w')
+            f.write(self.get('1.0', 'end'))
+            f.close()
+            self.master.title('Rhinote %s' % self.filename)
+            
+
+    def save_file_as(self, whatever=None):
+        self.filename = tkFileDialog.asksaveasfilename(filetypes=self._filetypes)
+        f = open(self.filename, 'w')
+        f.write(self.get('1.0', 'end'))
+        f.close()
+        
+
+    def open_file(self, whatever=None, filename=None):
+        if not filename:
+            self.filename = tkFileDialog.askopenfilename(filetypes=self._filetypes)
+            self.master.title('Rhinote %s' % self.filename)
+        else:
+            self.filename = filename
+            self.master.title('Rhinote %s' % self.filename)
+        if not (self.filename == ''):
+            f = open(self.filename, 'r')
+            f2 = f.read()
+            self.delete('1.0', 'end')
+            self.insert('1.0', f2)
+            f.close()
+            self.master.title('Rhinote %s' % self.filename)
+
+    def new_window(self, event):
+        Rhinote()
+
+    def printfile(self, whatever=None):
+        if not self.printcommand:
+            tkMessageBox.showerror('Print error', 'Print command (lp or lpr) not found')
+            return
+        if not self.formatcommand:
+            tkMessageBox.showerror('Print error', 'Format command (enscript) not found')
+            return
+        # Prepare the format command
+        formatargv = [self.formatcommand]
+        formatargv.extend(self.formatargs)
+        # Prepare the print command
+        printargv = [self.printcommand]
+        printargv.extend(self.printargs)
+        # Spawn both commands, piping the output of the format command
+        # to the input of the print command
+        pp = subprocess.Popen(printargv, stdin=subprocess.PIPE)
+        fp = subprocess.Popen(formatargv, stdin=subprocess.PIPE, stdout=pp.stdin)
+        # Feed the contents of the text area to the format command and wait
+        # for both commands to terminate
+        fp.communicate(input=self.get('1.0', 'end').encode())
+        pp.communicate()
+        # Notify the user of the outcome of the printing operation
+        if fp.returncode > 0 or pp.returncode > 0:
+            tkMessageBox.showerror('Print error', 'Printing failed')
+
+    def help(self, whatever=None):
+        tkMessageBox.showinfo('Rhinote Help', message='''
+Editing Commands
+    Ctrl-x : Cut selected text
+    Ctrl-c : Copy selected text
+    Ctrl-v : Paste cut/copied text
+    Ctrl-Z : Undo
+    Ctrl-Shift-z : Redo
+
+File Commands
+    Ctrl-o : Open file
+    Ctrl-s : Save current note
+    Ctrl-a : Save current note as <filename>
+    Ctrl-p : Print current note
+    Ctrl-n : Open new Rhinote
+
+General
+    Ctrl-h : Display this help window
+
+Rhinote version 0.7.4
+Free Software distributed under the GNU General Public License
+http://rhinote.tuxfamily.org
+''')
+
+    def which(self, cmd):
+        # Abort immediately if PATH is not set
+        path = os.getenv('PATH')
+        if not path:
+            return None
+        # Look in all directories listed in PATH
+        dirs = path.split(os.pathsep)
+        path = None
+        for d in dirs:
+            f = os.path.join(d, cmd)
+            # f must be an executable file
+            if os.path.isfile(f) and os.access(f, os.X_OK):
+                # Stop after the first success
+                path = f
+                break
+        return path
+
+    def __init__(self, master, **kw):
+        tkinter.Text.__init__(self, master, **kw)
+        self.bind('<Control-n>', self.new_window)
+        self.bind('<Control-N>', self.new_window)
+        self.bind('<Control-o>', self.open_file)
+        self.bind('<Control-O>', self.open_file)
+        self.bind('<Control-s>', self.save_file)
+        self.bind('<Control-S>', self.save_file)
+        self.bind('<Control-a>', self.save_file_as)
+        self.bind('<Control-A>', self.save_file_as)
+        self.bind('<Control-p>', self.printfile)
+        self.bind('<Control-P>', self.printfile)
+        self.bind('<Control-h>', self.help)
+        self.bind('<Control-H>', self.help)
+        self.master = master
+        self.filename = ''
+        self._filetypes = [
+            ('Text/ASCII', '*.txt'),
+            ('Rhinote files', '*.rhi'),
+            ('All files', '*'),
+        ]
+        # Find print and format commands
+        self.printcommand = self.which('lp')
+        self.printargs = ['-t', 'Rhinote file']
+        if not self.printcommand:
+            self.printcommand = self.which('lpr')
+            self.printargs = ['-T', 'Rhinote file']
+        self.formatcommand = self.which('enscript')
+        self.formatargs = ['-B', '--word-wrap', '-o', '-']
+
+
+# make it so:
+if __name__ == '__main__':
+    Rhinote()
